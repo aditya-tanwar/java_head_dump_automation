@@ -8,18 +8,19 @@ on:
         description: 'Choose the Cluster Name'
         required: true
         options:
-          - prgx-dev
-          - prgx-qa
-          - prgx-uat
+          - dev
+          - qa
+          - uat
       namespace:
         type: string
         description: 'Enter the Namespace'
         required: true
       service_name: 
         type: string
-        description: 'Enter the Name of the Service'
+        description: 'Enter the Name of the Service ( Deployment / StatefulSet )'
         required: true
 
+# These below environment variables are being fetched from the github secrets for this repository
 env:
   minio_access_key: ${{ secrets.minio_access_key }}
   minio_secret_key: ${{ secrets.minio_secret_key }}
