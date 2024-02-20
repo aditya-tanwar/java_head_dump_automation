@@ -14,7 +14,7 @@
 
     - set_fact:
         pods: "{{ pod_list.stdout_lines }}"
-          #pods: "{{ pod_list | json_query('results[*].stdout_lines[*]') | flatten }}"
+          #pods: "{{ pod_list | json_query('results[*].stdout_lines[*]') | flatten }}" # this is basically to do json parsing on the registered value / variable
 
     - debug:
         msg: "{{ pods }}"
