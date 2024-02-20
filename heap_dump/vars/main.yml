@@ -1,0 +1,13 @@
+---
+# vars file for heap_dump
+
+# Required Values
+
+namespace: ''
+service_name: ''
+
+
+# Minio related values
+minio_url: 'https://minio.example.com'
+minio_access_key: ''
+minio_secret_key: ''

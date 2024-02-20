@@ -1,0 +1,34 @@
+---
+- name: PLAYBOOK TO GENERATE THE DUMPS( HEAD & THREAD )  FOR THE PODS
+  hosts: localhost
+  vars:
+    ip_dev: 10.0.0.1
+    #ip_qa: 10.10.83.73
+    #ip_uat: 10.10.84.63
+    env: "" 
+
+  tasks:
+# ADDING THE IP OF THE CONTROL PLANE OF THE CLUSTER TO BE ABLE TO USE THE BELOW COMMANDS
+    - set_fact:
+        ip: "{{ ip_dev }}"
+      when: env == "dev"
+
+    - set_fact:
+        ip: "{{ ip_qa }}"
+      when: env == "qa"
+
+    - set_fact:
+        ip: "{{ ip_uat }}"
+      when: env == "uat"
+
+    - add_host:
+        host: "{{ ip  }}"
+        groups: linux
+        #ansible_user: "{{ username }}"
+        #ansible_password: "{{ password }}"
+
+# ONCE THE HOST IS ADDED THE BELOW TASK WILL RUN ON THE NEWLY CREATED GROUP "linux"
+- hosts: linux
+  become: true
+  roles: 
+   - heap_dump

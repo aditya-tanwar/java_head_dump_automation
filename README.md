@@ -1,1 +1,2 @@
-# java_head_dump_automation
+# java_heap_dump_automation
+This is heap dump automation for the application workload on kubernetes

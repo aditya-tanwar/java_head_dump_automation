@@ -1,0 +1,144 @@
+---
+# tasks file for heap_dump
+    - name: THIS IS THE CLEANUP ACTIVITY FOR THE CONTROL PLANE NODE 
+      shell: rm -rf *.tdump && rm -rf *-head-dump.bin
+      args:
+       chdir: /tmp
+       
+    - name: LIST THE PODS AS PER THE SERVICE NAME ( DEPLOYMENT / STATEFUL SET )
+      shell: kubectl get pods -l app='{{ service_name }}' -n '{{ namespace }}' | awk '{print $1}' | sed '1d'
+      register: pod_list
+
+    - debug:
+        msg: "{{ pod_list }}"
+
+    - set_fact:
+        pods: "{{ pod_list.stdout_lines }}"
+          #pods: "{{ pod_list | json_query('results[*].stdout_lines[*]') | flatten }}"
+
+    - debug:
+        msg: "{{ pods }}"
+
+    - name: DOWNLOADING THE JATTACH BINARY ON THE LOCAL NODE
+      shell: curl -vL https://github.com/jattach/jattach/releases/download/v2.1/jattach -o jattach
+      args:
+        chdir: /tmp/
+
+# HERE MAKING USE OF THE KUBECTL CP COMMAND TO PERFORM THIS ACTIVITY
+
+    - name: COPYING THE JATTACH BINARY FROM THE LOCAL NODE TO THE CLUSTER
+      shell: 'kubectl cp /tmp/jattach {{ namespace }}/{{ item }}:/tmp/jattach'
+      with_items: "{{ pods }}"
+      register: jattach_copy
+      ignore_errors: true
+
+    - debug: 
+        msg: "{{ jattach_copy }}"
+        
+    
+    - name: FAILING DUE TO MODULE ERROR 
+      fail: 
+        msg: "{{ jattach_copy | json_query('results[*].stderr') | flatten }}"
+      when: (jattach_copy.failed is defined) and (jattach_copy.failed == true)   
+
+    - name: CLEANING PREVIOUS DUMP FILES
+      shell: |
+        kubectl -n '{{ namespace }}' exec -it '{{ item }}' -- /bin/bash -c "cd /tmp && ls -ltr &&  rm {{ item }}*"
+      with_items: "{{ pods }}"
+      register: dump_clean
+      ignore_errors: true
+
+# TASK TO GENERATE THE HEAD DUMPS
+
+    - name: GENERATING THE HEAD DUMPS
+      shell: |
+        export java_id=$(kubectl -n '{{ namespace }}' exec -it '{{ item }}' -- /bin/bash -c "grep 'java' /proc/*/status | sed 's/\// /g' | grep -o '[0-9]*'")
+        kubectl -n '{{ namespace }}' exec -it '{{ item }}' -- /bin/bash -c "cd /tmp && pwd && chmod +x jattach && ./jattach $java_id dumpheap /tmp/{{item}}-head-dump.bin"
+      with_items: "{{ pods }}"
+      register: headdump_generate
+      ignore_errors: true
+
+    - debug:
+        msg: "{{ headdump_generate }}"
+
+    - name: FAILING IF HEAD DUMPS ARE NOT GETTING GENERATED
+      fail:
+        msg: "{{ headdump_generate | json_query('results[*].stdout') | flatten }} - JAVA NOT RUNNING ON THE POD , HENCE NOT ABLE TO FIND THE PROCESS ID"
+      when: (headdump_generate.failed is defined) and (headdump_generate.failed == true)
+
+
+# TASK TO GENERATE THE THREAD DUMPS
+
+    - name: GENERATING THE THREAD DUMPS
+      shell: |
+        export java_id=$(kubectl -n '{{ namespace }}' exec -it '{{ item }}' -- /bin/bash -c "grep 'java' /proc/*/status | sed 's/\// /g' | grep -o '[0-9]*'")
+        kubectl -n '{{ namespace }}' exec -it '{{ item }}' -- /bin/bash -c "cd /tmp && pwd && chmod +x jattach  && ./jattach $java_id threaddump > /tmp/{{ item }}.tdump"
+      with_items: "{{ pods }}"
+      register: threaddump_generate
+      ignore_errors: true
+
+    - debug:
+        msg: "{{ threaddump_generate }}"
+
+    - name: FAILING IF HEAD DUMPS ARE NOT GETTING GENERATED
+      fail:
+        msg: "{{ threaddump_generate | json_query('results[*].stdout') | flatten }}  - JAVA NOT RUNNING ON THE POD , HENCE NOT ABLE TO FIND THE PROCESS ID"
+      when: (threaddump_generate.failed is defined) and (threaddump_generate.failed == true)
+
+
+# FETCHING THE FILES FROM THE PODS TO LOCAL
+
+    - name: FETCHING THE FILE FROM THE POD TO LOCAL
+      shell: 'kubectl cp {{ namespace }}/{{ item }}:/tmp/{{ item }}-head-dump.bin /tmp/{{ item }}-head-dump.bin && kubectl cp {{ namespace }}/{{ item }}:/tmp/{{ item }}.tdump /tmp/{{ item }}.tdump'
+      with_items: "{{ pods }}"
+      #ignore_errors: true
+
+#----- uPLOADING TO THE CENTRAL MINIO
+
+# INSTALLAING THE MINIO CLIENT
+
+    - name: INSTALLING THE MINIO CLIENT ( CLI )
+      shell: "{{ item }}"
+      loop:
+        - 'sudo curl -o /usr/local/bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc'
+        - 'sudo chmod +x /usr/local/bin/mc'
+        - 'mc --version'
+      register: mc_out
+
+# ADDING THE MINIO SERVER
+
+    - name: ADDING THE MINIO SERVER
+      shell: 'mc alias set myminio {{ minio_url }} {{ minio_access_key }} {{ minio_secret_key }}'
+      register: mc_server
+
+    - name: pause for 30 seconds
+      pause:
+        seconds: 10
+
+    - name: Listing the files in the Control Plane Node
+      shell: ls /tmp/
+      register: ls
+
+    - debug:
+        var: ls
+        
+# UPLOADING THE HEAD DUMPS FILE TO THE MINIO BUCKET
+
+    - name: UPLOADING FILES TO THE MINIO BUCKET "heap-dumps"
+      shell: | 
+        mc cp /tmp/{{item}}-head-dump.bin myminio/heap-dumps/{{namespace}}/{{service_name}}/{{item}}-head-dump.bin
+      with_items: "{{ pods }}"
+      register: minio_head_out
+
+    - debug:
+        msg: "{{ minio_head_out }}"
+
+    - name: UPLOADING FILES TO THE MINIO BUCKET "heap-dumps"
+      shell: | 
+        mc cp /tmp/{{item}}.tdump myminio/heap-dumps/{{namespace}}/{{service_name}}/{{item}}.tdump
+      with_items: "{{ pods }}"
+      register: minio_thread_out
+
+    - debug:
+        msg: "{{ minio_thread_out }}"
+
