@@ -1,0 +1,38 @@
+---
+name: HEAP DUMP AUTOMATION
+on:
+  workflow_dispatch:
+    inputs:
+      cluster:
+        type: choice
+        description: 'Choose the Cluster Name'
+        required: true
+        options:
+          - prgx-dev
+          - prgx-qa
+          - prgx-uat
+      namespace:
+        type: string
+        description: 'Enter the Namespace'
+        required: true
+      service_name: 
+        type: string
+        description: 'Enter the Name of the Service'
+        required: true
+
+env:
+  minio_access_key: ${{ secrets.minio_access_key }}
+  minio_secret_key: ${{ secrets.minio_secret_key }}
+
+
+jobs:
+  ansible_job:
+    runs-on: [self-hosted, terraform]
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+      - name: Heap-Dump Generation
+        # Running the ansible playbook command with multiple variables be injecting the workflow_dispatch inputs.
+        run: | 
+          ansible-playbook heap_dump_automation.yaml -e "env=${{ inputs.cluster }} namespace=${{ inputs.namespace }} service_name=${{ inputs.service_name }} minio_access_key=$minio_access_key minio_secret_key=$minio_secret_key" -vv
+        shell: bash
